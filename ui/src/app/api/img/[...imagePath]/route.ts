@@ -4,11 +4,13 @@ import fs from 'fs';
 import path from 'path';
 import { getDatasetsRoot, getTrainingFolder, getDataRoot } from '@/server/settings';
 
-export async function GET(request: NextRequest, { params }: { params: { imagePath: string } }) {
+export async function GET(request: NextRequest, { params }: { params: { imagePath: string[] } }) {
   const { imagePath } = await params;
   try {
     // Decode the path
-    const filepath = decodeURIComponent(imagePath);
+    // imagePath is an array, join it to get the full path
+    const joinedPath = Array.isArray(imagePath) ? imagePath.join('/') : imagePath;
+    const filepath = decodeURIComponent(joinedPath);
 
     // Get allowed directories
     const datasetRoot = await getDatasetsRoot();
@@ -17,11 +19,19 @@ export async function GET(request: NextRequest, { params }: { params: { imagePat
 
     const allowedDirs = [datasetRoot, trainingRoot, dataRoot];
 
+    // Resolve absolute paths for allowed directories to handle symlinks/mounts
+    const resolvedAllowedDirs = allowedDirs.map(dir => path.resolve(dir));
+
+    // Resolve the absolute path of the requested file
+    // We use path.resolve to handle relative paths and normalize it
+    const absoluteFilePath = path.resolve(filepath);
+
     // Security check: Ensure path is in allowed directory
-    const isAllowed = allowedDirs.some(allowedDir => filepath.startsWith(allowedDir)) && !filepath.includes('..');
+    // We check against resolved paths
+    const isAllowed = resolvedAllowedDirs.some(allowedDir => absoluteFilePath.startsWith(allowedDir));
 
     if (!isAllowed) {
-      console.warn(`Access denied: ${filepath} not in ${allowedDirs.join(', ')}`);
+      console.warn(`Access denied: ${absoluteFilePath} not in ${resolvedAllowedDirs.join(', ')}`);
       return new NextResponse('Access denied', { status: 403 });
     }
 
